@@ -19,6 +19,8 @@ using Jellyfin.Server.Implementations.Extensions;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Extensions;
+using MediaBrowser.Providers.Plugins.AudioDb;
+using MediaBrowser.Providers.Plugins.Tmdb;
 using MediaBrowser.XbmcMetadata;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -51,6 +53,10 @@ namespace Jellyfin.Server
             _serverApplicationHost = appHost;
             _configuration = configuration;
             _serverConfigurationManager = appHost.ConfigurationManager;
+
+            // Initialize API keys from configuration
+            TmdbUtils.ApiKey = _configuration["TMDB_API_KEY"] ?? TmdbUtils.ApiKey;
+            AudioDbArtistProvider.ApiKey = _configuration["AUDIODB_API_KEY"] ?? AudioDbArtistProvider.ApiKey;
         }
 
         /// <summary>
