@@ -26,7 +26,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb
         /// <summary>
         /// API key to use when performing an API call.
         /// </summary>
-        public const string ApiKey = "4219e299c89411838049ab0dab19ebd5";
+        public static string ApiKey { get; set; } = "REPLACEME_IN_CONFIG";
 
         /// <summary>
         /// The crew types to keep.
