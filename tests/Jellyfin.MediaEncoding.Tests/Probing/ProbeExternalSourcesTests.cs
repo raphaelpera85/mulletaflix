@@ -42,9 +42,9 @@ namespace Jellyfin.MediaEncoding.Tests.Probing
                 MediaType = MediaBrowser.Model.Dlna.DlnaProfileType.Video,
             };
 
-            var extraArg = encoder.GetExtraArguments(req);
-
-            Assert.Contains($"-user_agent \"{userAgent}\"", extraArg, StringComparison.InvariantCulture);
+            var extraArgs = encoder.GetExtraArguments(req);
+            Assert.Contains("-user_agent", extraArgs);
+            Assert.Contains(userAgent, extraArgs);
         }
     }
 }

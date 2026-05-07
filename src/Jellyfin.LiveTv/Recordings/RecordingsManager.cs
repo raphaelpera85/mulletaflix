@@ -813,17 +813,35 @@ public sealed class RecordingsManager : IRecordingsManager, IDisposable
             using var process = new Process();
             process.StartInfo = new ProcessStartInfo
             {
-                Arguments = options.RecordingPostProcessorArguments
-                    .Replace("{path}", path, StringComparison.OrdinalIgnoreCase),
                 CreateNoWindow = true,
                 ErrorDialog = false,
                 FileName = options.RecordingPostProcessor,
                 WindowStyle = ProcessWindowStyle.Hidden,
                 UseShellExecute = false
             };
+
+            if (!string.IsNullOrWhiteSpace(options.RecordingPostProcessorArguments))
+            {
+                // Simple split by space. While not exhaustive for all shell quoting rules, 
+                // it allows us to use ArgumentList which is fundamentally safer for the {path} injection.
+                var argParts = options.RecordingPostProcessorArguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                foreach (var part in argParts)
+                {
+                    var resolved = part.Replace("{path}", path, StringComparison.OrdinalIgnoreCase);
+                    // Remove quotes if the user put them in the template (e.g. "{path}") 
+                    // because ArgumentList will add them back if needed and we don't want double-quoting.
+                    if (resolved.Length >= 2 && resolved.StartsWith('\"') && resolved.EndsWith('\"'))
+                    {
+                        resolved = resolved.Substring(1, resolved.Length - 2);
+                    }
+
+                    process.StartInfo.ArgumentList.Add(resolved);
+                }
+            }
+
             process.EnableRaisingEvents = true;
 
-            _logger.LogInformation("Running recording post processor {0} {1}", process.StartInfo.FileName, process.StartInfo.Arguments);
+            _logger.LogInformation("Running recording post processor {0} with {1} arguments", process.StartInfo.FileName, process.StartInfo.ArgumentList.Count);
 
             process.Start();
             await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);

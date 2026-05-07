@@ -221,20 +221,21 @@ public class PluginsController : BaseJellyfinApiController
     public ActionResult GetPluginImage([FromRoute, Required] Guid pluginId, [FromRoute, Required] Version version)
     {
         var plugin = _pluginManager.GetPlugin(pluginId, version);
-        if (plugin is null)
+        if (plugin is null || string.IsNullOrEmpty(plugin.Manifest.ImagePath))
         {
             return NotFound();
         }
 
-        var imagePath = Path.Combine(plugin.Path, plugin.Manifest.ImagePath ?? string.Empty);
-        if (plugin.Manifest.ImagePath is null || !System.IO.File.Exists(imagePath))
+        var pluginPath = Path.GetFullPath(plugin.Path);
+        var imagePath = Path.GetFullPath(Path.Combine(pluginPath, plugin.Manifest.ImagePath));
+
+        if (!imagePath.StartsWith(pluginPath, StringComparison.OrdinalIgnoreCase) || !System.IO.File.Exists(imagePath))
         {
             return NotFound();
         }
 
         Response.Headers.ContentDisposition = "attachment";
 
-        imagePath = Path.Combine(plugin.Path, plugin.Manifest.ImagePath);
         return PhysicalFile(imagePath, MimeTypes.GetMimeType(imagePath));
     }
 

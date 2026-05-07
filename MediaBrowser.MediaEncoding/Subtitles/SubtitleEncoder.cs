@@ -368,28 +368,36 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             {
                 encodingParam = string.Empty;
             }
-            else if (!string.IsNullOrEmpty(encodingParam))
+            int exitCode;
+
+            var startInfo = new ProcessStartInfo
             {
-                encodingParam = " -sub_charenc " + encodingParam;
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                FileName = _mediaEncoder.EncoderPath,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                ErrorDialog = false
+            };
+
+            if (!string.IsNullOrEmpty(encodingParam))
+            {
+                startInfo.ArgumentList.Add("-sub_charenc");
+                startInfo.ArgumentList.Add(encodingParam);
             }
 
-            int exitCode;
+            startInfo.ArgumentList.Add("-i");
+            startInfo.ArgumentList.Add(inputPath);
+            startInfo.ArgumentList.Add("-c:s");
+            startInfo.ArgumentList.Add("srt");
+            startInfo.ArgumentList.Add(outputPath);
 
             using (var process = new Process
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    FileName = _mediaEncoder.EncoderPath,
-                    Arguments = string.Format(CultureInfo.InvariantCulture, "{0} -i \"{1}\" -c:s srt \"{2}\"", encodingParam, inputPath, outputPath),
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    ErrorDialog = false
-                },
+                StartInfo = startInfo,
                 EnableRaisingEvents = true
             })
             {
-                _logger.LogInformation("{0} {1}", process.StartInfo.FileName, process.StartInfo.Arguments);
+                _logger.LogInformation("{0} {1}", process.StartInfo.FileName, string.Join(' ', process.StartInfo.ArgumentList));
 
                 try
                 {
@@ -578,10 +586,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             {
                 var inputPath = _mediaEncoder.GetInputArgument(mksFile, mediaSource);
                 var outputPaths = new List<string>();
-                var args = string.Format(
-                    CultureInfo.InvariantCulture,
-                    "-i {0}",
-                    inputPath);
+                var argsList = new List<string> { "-i", inputPath.Replace("\"", string.Empty, StringComparison.Ordinal) };
 
                 foreach (var subtitleStream in subtitleStreams)
                 {
@@ -603,15 +608,18 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                     Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? throw new FileNotFoundException($"Calculated path ({outputPath}) is not valid."));
 
                     outputPaths.Add(outputPath);
-                    args += string.Format(
-                        CultureInfo.InvariantCulture,
-                        " -map 0:{0} -an -vn -c:s {1} -flush_packets 1 \"{2}\"",
-                        streamIndex,
-                        outputCodec,
-                        outputPath);
+                    argsList.Add("-map");
+                    argsList.Add("0:" + streamIndex.ToString(CultureInfo.InvariantCulture));
+                    argsList.Add("-an");
+                    argsList.Add("-vn");
+                    argsList.Add("-c:s");
+                    argsList.Add(outputCodec);
+                    argsList.Add("-flush_packets");
+                    argsList.Add("1");
+                    argsList.Add(outputPath);
                 }
 
-                await ExtractSubtitlesForFile(inputPath, args, outputPaths, cancellationToken).ConfigureAwait(false);
+                await ExtractSubtitlesForFile(inputPath, argsList, outputPaths, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -622,10 +630,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
         {
             var inputPath = _mediaEncoder.GetInputArgument(mediaSource.Path, mediaSource);
             var outputPaths = new List<string>();
-            var args = string.Format(
-                CultureInfo.InvariantCulture,
-                "-i {0}",
-                inputPath);
+            var argsList = new List<string> { "-i", inputPath.Replace("\"", string.Empty, StringComparison.Ordinal) };
 
             foreach (var subtitleStream in subtitleStreams)
             {
@@ -648,12 +653,15 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? throw new FileNotFoundException($"Calculated path ({outputPath}) is not valid."));
 
                 outputPaths.Add(outputPath);
-                args += string.Format(
-                    CultureInfo.InvariantCulture,
-                    " -map 0:{0} -an -vn -c:s {1} -flush_packets 1 \"{2}\"",
-                    streamIndex,
-                    outputCodec,
-                    outputPath);
+                argsList.Add("-map");
+                argsList.Add("0:" + streamIndex.ToString(CultureInfo.InvariantCulture));
+                argsList.Add("-an");
+                argsList.Add("-vn");
+                argsList.Add("-c:s");
+                argsList.Add(outputCodec);
+                argsList.Add("-flush_packets");
+                argsList.Add("1");
+                argsList.Add(outputPath);
             }
 
             if (outputPaths.Count == 0)
@@ -661,32 +669,38 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 return;
             }
 
-            await ExtractSubtitlesForFile(inputPath, args, outputPaths, cancellationToken).ConfigureAwait(false);
+            await ExtractSubtitlesForFile(inputPath, argsList, outputPaths, cancellationToken).ConfigureAwait(false);
         }
 
         private async Task ExtractSubtitlesForFile(
             string inputPath,
-            string args,
+            IEnumerable<string> args,
             List<string> outputPaths,
             CancellationToken cancellationToken)
         {
             int exitCode;
 
+            var startInfo = new ProcessStartInfo
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                FileName = _mediaEncoder.EncoderPath,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                ErrorDialog = false
+            };
+
+            foreach (var arg in args)
+            {
+                startInfo.ArgumentList.Add(arg);
+            }
+
             using (var process = new Process
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    FileName = _mediaEncoder.EncoderPath,
-                    Arguments = args,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    ErrorDialog = false
-                },
+                StartInfo = startInfo,
                 EnableRaisingEvents = true
             })
             {
-                _logger.LogInformation("{File} {Arguments}", process.StartInfo.FileName, process.StartInfo.Arguments);
+                _logger.LogInformation("{File} {Arguments}", process.StartInfo.FileName, string.Join(' ', process.StartInfo.ArgumentList));
 
                 try
                 {

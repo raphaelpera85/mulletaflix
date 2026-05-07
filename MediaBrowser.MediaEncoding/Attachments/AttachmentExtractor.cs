@@ -147,31 +147,47 @@ namespace MediaBrowser.MediaEncoding.Attachments
                 // since we only need the -dump_attachment side effect.
                 var hasVideoOrAudioStream = mediaSource.MediaStreams
                     .Any(s => s.Type == MediaStreamType.Video || s.Type == MediaStreamType.Audio);
-                var processArgs = string.Format(
-                    CultureInfo.InvariantCulture,
-                    "-dump_attachment:t \"\" -y {0} -i {1} {2}",
-                    inputPath.EndsWith(".concat\"", StringComparison.OrdinalIgnoreCase) ? "-f concat -safe 0" : string.Empty,
-                    inputPath,
-                    hasVideoOrAudioStream ? "-t 0 -f null null" : string.Empty);
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = _mediaEncoder.EncoderPath,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                    WorkingDirectory = outputFolder,
+                    ErrorDialog = false
+                };
 
-                int exitCode;
+                startInfo.ArgumentList.Add("-dump_attachment:t");
+                startInfo.ArgumentList.Add(string.Empty);
+                startInfo.ArgumentList.Add("-y");
+
+                if (inputPath.EndsWith(".concat\"", StringComparison.OrdinalIgnoreCase))
+                {
+                    startInfo.ArgumentList.Add("-f");
+                    startInfo.ArgumentList.Add("concat");
+                    startInfo.ArgumentList.Add("-safe");
+                    startInfo.ArgumentList.Add("0");
+                }
+
+                startInfo.ArgumentList.Add("-i");
+                startInfo.ArgumentList.Add(inputPath.Replace("\"", string.Empty, StringComparison.Ordinal));
+
+                if (hasVideoOrAudioStream)
+                {
+                    startInfo.ArgumentList.Add("-t");
+                    startInfo.ArgumentList.Add("0");
+                    startInfo.ArgumentList.Add("-f");
+                    startInfo.ArgumentList.Add("null");
+                    startInfo.ArgumentList.Add("null");
+                }
 
                 using (var process = new Process
-                    {
-                        StartInfo = new ProcessStartInfo
-                        {
-                            Arguments = processArgs,
-                            FileName = _mediaEncoder.EncoderPath,
-                            UseShellExecute = false,
-                            CreateNoWindow = true,
-                            WindowStyle = ProcessWindowStyle.Hidden,
-                            WorkingDirectory = outputFolder,
-                            ErrorDialog = false
-                        },
-                        EnableRaisingEvents = true
-                    })
                 {
-                    _logger.LogInformation("{File} {Arguments}", process.StartInfo.FileName, process.StartInfo.Arguments);
+                    StartInfo = startInfo,
+                    EnableRaisingEvents = true
+                })
+                {
+                    _logger.LogInformation("{File} {Arguments}", process.StartInfo.FileName, string.Join(' ', process.StartInfo.ArgumentList));
 
                     process.Start();
 
@@ -273,31 +289,36 @@ namespace MediaBrowser.MediaEncoding.Attachments
 
             var hasVideoOrAudioStream = mediaSource.MediaStreams
                 .Any(s => s.Type == MediaStreamType.Video || s.Type == MediaStreamType.Audio);
-            var processArgs = string.Format(
-                CultureInfo.InvariantCulture,
-                "-dump_attachment:{1} \"{2}\" -i {0} {3}",
-                inputPath,
-                attachmentStreamIndex,
-                EncodingUtils.NormalizePath(outputPath),
-                hasVideoOrAudioStream ? "-t 0 -f null null" : string.Empty);
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = _mediaEncoder.EncoderPath,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                ErrorDialog = false
+            };
 
-            int exitCode;
+            startInfo.ArgumentList.Add("-dump_attachment:" + attachmentStreamIndex);
+            startInfo.ArgumentList.Add(outputPath);
+            startInfo.ArgumentList.Add("-i");
+            startInfo.ArgumentList.Add(inputPath.Replace("\"", string.Empty, StringComparison.Ordinal));
+
+            if (hasVideoOrAudioStream)
+            {
+                startInfo.ArgumentList.Add("-t");
+                startInfo.ArgumentList.Add("0");
+                startInfo.ArgumentList.Add("-f");
+                startInfo.ArgumentList.Add("null");
+                startInfo.ArgumentList.Add("null");
+            }
 
             using (var process = new Process
-                {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        Arguments = processArgs,
-                        FileName = _mediaEncoder.EncoderPath,
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        WindowStyle = ProcessWindowStyle.Hidden,
-                        ErrorDialog = false
-                    },
-                    EnableRaisingEvents = true
-                })
             {
-                _logger.LogInformation("{File} {Arguments}", process.StartInfo.FileName, process.StartInfo.Arguments);
+                StartInfo = startInfo,
+                EnableRaisingEvents = true
+            })
+            {
+                _logger.LogInformation("{File} {Arguments}", process.StartInfo.FileName, string.Join(' ', process.StartInfo.ArgumentList));
 
                 process.Start();
 

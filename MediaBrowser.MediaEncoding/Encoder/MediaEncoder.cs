@@ -428,43 +428,44 @@ namespace MediaBrowser.MediaEncoding.Encoder
                 cancellationToken);
         }
 
-        internal string GetExtraArguments(MediaInfoRequest request)
+        internal IEnumerable<string> GetExtraArguments(MediaInfoRequest request)
         {
-            var ffmpegAnalyzeDuration = _config.GetFFmpegAnalyzeDuration() ?? string.Empty;
-            var ffmpegProbeSize = _config.GetFFmpegProbeSize() ?? string.Empty;
-            var analyzeDuration = string.Empty;
-            var extraArgs = string.Empty;
+            var ffmpegAnalyzeDuration = _config.GetFFmpegAnalyzeDuration();
+            var ffmpegProbeSize = _config.GetFFmpegProbeSize();
+            var args = new List<string>();
 
             if (request.MediaSource.AnalyzeDurationMs > 0)
             {
-                analyzeDuration = "-analyzeduration " + (request.MediaSource.AnalyzeDurationMs * 1000);
+                args.Add("-analyzeduration");
+                args.Add((request.MediaSource.AnalyzeDurationMs * 1000).ToString(CultureInfo.InvariantCulture));
             }
             else if (!string.IsNullOrEmpty(ffmpegAnalyzeDuration))
             {
-                analyzeDuration = "-analyzeduration " + ffmpegAnalyzeDuration;
-            }
-
-            if (!string.IsNullOrEmpty(analyzeDuration))
-            {
-                extraArgs = analyzeDuration;
+                args.Add("-analyzeduration");
+                args.Add(ffmpegAnalyzeDuration);
             }
 
             if (!string.IsNullOrEmpty(ffmpegProbeSize))
             {
-                extraArgs += " -probesize " + ffmpegProbeSize;
+                args.Add("-probesize");
+                args.Add(ffmpegProbeSize);
             }
 
             if (request.MediaSource.RequiredHttpHeaders.TryGetValue("User-Agent", out var userAgent))
             {
-                extraArgs += $" -user_agent \"{userAgent}\"";
+                args.Add("-user_agent");
+                args.Add(userAgent);
             }
 
             if (request.MediaSource.Protocol == MediaProtocol.Rtsp)
             {
-                extraArgs += " -rtsp_transport tcp+udp -rtsp_flags prefer_tcp";
+                args.Add("-rtsp_transport");
+                args.Add("tcp+udp");
+                args.Add("-rtsp_flags");
+                args.Add("prefer_tcp");
             }
 
-            return extraArgs;
+            return args;
         }
 
         /// <inheritdoc />
@@ -502,42 +503,56 @@ namespace MediaBrowser.MediaEncoding.Encoder
             string primaryPath,
             MediaProtocol protocol,
             bool extractChapters,
-            string probeSizeArgument,
+            IEnumerable<string> extraArgs,
             bool isAudio,
             VideoType? videoType,
             CancellationToken cancellationToken)
         {
-            var args = extractChapters
-                ? "{0} -i {1} -threads {2} -v warning -print_format json -show_streams -show_chapters -show_format"
-                : "{0} -i {1} -threads {2} -v warning -print_format json -show_streams -show_format";
+            var startInfo = new ProcessStartInfo
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                FileName = _ffprobePath,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                ErrorDialog = false,
+            };
+
+            foreach (var arg in extraArgs)
+            {
+                startInfo.ArgumentList.Add(arg);
+            }
+
+            startInfo.ArgumentList.Add("-i");
+            startInfo.ArgumentList.Add(inputPath);
+            startInfo.ArgumentList.Add("-threads");
+            startInfo.ArgumentList.Add(_threads.ToString(CultureInfo.InvariantCulture));
+            startInfo.ArgumentList.Add("-v");
+            startInfo.ArgumentList.Add("warning");
+            startInfo.ArgumentList.Add("-print_format");
+            startInfo.ArgumentList.Add("json");
+            startInfo.ArgumentList.Add("-show_streams");
+
+            if (extractChapters)
+            {
+                startInfo.ArgumentList.Add("-show_chapters");
+            }
+
+            startInfo.ArgumentList.Add("-show_format");
 
             if (protocol == MediaProtocol.File && !isAudio && _proberSupportsFirstVideoFrame)
             {
-                args += " -show_frames -only_first_vframe";
+                startInfo.ArgumentList.Add("-show_frames");
+                startInfo.ArgumentList.Add("-only_first_vframe");
             }
-
-            args = string.Format(CultureInfo.InvariantCulture, args, probeSizeArgument, inputPath, _threads).Trim();
 
             var process = new Process
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-
-                    // Must consume both or ffmpeg may hang due to deadlocks.
-                    RedirectStandardOutput = true,
-
-                    FileName = _ffprobePath,
-                    Arguments = args,
-
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    ErrorDialog = false,
-                },
+                StartInfo = startInfo,
                 EnableRaisingEvents = true
             };
 
-            _logger.LogDebug("Starting {ProcessFileName} with args {ProcessArgs}", _ffprobePath, args);
+            _logger.LogDebug("Starting {ProcessFileName} with ArgumentList {ProcessArgs}", _ffprobePath, string.Join(' ', startInfo.ArgumentList));
 
             var memoryStream = new MemoryStream();
             await using (memoryStream.ConfigureAwait(false))
@@ -644,9 +659,9 @@ namespace MediaBrowser.MediaEncoding.Encoder
             return await ExtractImageInternal(inputArgument, container, videoStream, imageStreamIndex, threedFormat, offset, false, targetFormat, isAudio, cancellationToken).ConfigureAwait(false);
         }
 
-        private string GetImageResolutionParameter()
+        private IEnumerable<string> GetImageResolutionParameter()
         {
-            var imageResolutionParameter = _serverConfig.Configuration.ChapterImageResolution switch
+            var res = _serverConfig.Configuration.ChapterImageResolution switch
             {
                 ImageResolution.P144 => "256x144",
                 ImageResolution.P240 => "426x240",
@@ -659,12 +674,12 @@ namespace MediaBrowser.MediaEncoding.Encoder
                 _ => string.Empty
             };
 
-            if (!string.IsNullOrEmpty(imageResolutionParameter))
+            if (string.IsNullOrEmpty(res))
             {
-                imageResolutionParameter = " -s " + imageResolutionParameter;
+                return Array.Empty<string>();
             }
 
-            return imageResolutionParameter;
+            return new[] { "-s", res };
         }
 
         private async Task<string> ExtractImageInternal(
@@ -742,21 +757,20 @@ namespace MediaBrowser.MediaEncoding.Encoder
             }
 
             var vf = string.Join(',', filters);
-            var mapArg = imageStreamIndex.HasValue ? (" -map 0:" + imageStreamIndex.Value.ToString(CultureInfo.InvariantCulture)) : string.Empty;
-            var args = string.Format(
-                CultureInfo.InvariantCulture,
-                "-i {0}{1} -threads {2} -v quiet -vframes 1 -vf {3}{4}{5} -f image2 \"{6}\"",
-                inputPath,
-                mapArg,
-                _threads,
-                vf,
-                isAudio ? string.Empty : GetImageResolutionParameter(),
-                EncodingHelper.GetVideoSyncOption("-1", EncoderVersion), // auto decide fps mode
-                tempExtractPath);
+
+            var startInfo = new ProcessStartInfo
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                FileName = _ffmpegPath,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                ErrorDialog = false,
+            };
 
             if (offset.HasValue)
             {
-                args = string.Format(CultureInfo.InvariantCulture, "-ss {0} ", GetTimeParameter(offset.Value)) + args;
+                startInfo.ArgumentList.Add("-ss");
+                startInfo.ArgumentList.Add(GetTimeParameter(offset.Value));
             }
 
             // The mpegts demuxer cannot seek to keyframes, so we have to let the
@@ -764,7 +778,8 @@ namespace MediaBrowser.MediaEncoding.Encoder
             var seekMpegTs = offset.HasValue && string.Equals("mpegts", container, StringComparison.OrdinalIgnoreCase);
             if (useIFrame && (useTradeoff || seekMpegTs))
             {
-                args = "-skip_frame nokey " + args;
+                startInfo.ArgumentList.Add("-skip_frame");
+                startInfo.ArgumentList.Add("nokey");
             }
 
             if (!string.IsNullOrWhiteSpace(container))
@@ -772,25 +787,58 @@ namespace MediaBrowser.MediaEncoding.Encoder
                 var inputFormat = EncodingHelper.GetInputFormat(container);
                 if (!string.IsNullOrWhiteSpace(inputFormat))
                 {
-                    args = "-f " + inputFormat + " " + args;
+                    startInfo.ArgumentList.Add("-f");
+                    startInfo.ArgumentList.Add(inputFormat);
                 }
             }
 
+            startInfo.ArgumentList.Add("-i");
+            // inputPath is already prefixed and quoted by EncodingUtils (e.g. file:"path")
+            // When using ArgumentList, we should ideally not have the quotes. 
+            // However, to avoid breaking legacy EncodingUtils logic, we'll strip the quotes if they exist
+            // since ArgumentList will handle escaping correctly.
+            startInfo.ArgumentList.Add(inputPath.Replace("\"", string.Empty, StringComparison.Ordinal));
+
+            if (imageStreamIndex.HasValue)
+            {
+                startInfo.ArgumentList.Add("-map");
+                startInfo.ArgumentList.Add("0:" + imageStreamIndex.Value.ToString(CultureInfo.InvariantCulture));
+            }
+
+            startInfo.ArgumentList.Add("-threads");
+            startInfo.ArgumentList.Add(_threads.ToString(CultureInfo.InvariantCulture));
+
+            startInfo.ArgumentList.Add("-v");
+            startInfo.ArgumentList.Add("quiet");
+
+            startInfo.ArgumentList.Add("-vframes");
+            startInfo.ArgumentList.Add("1");
+
+            startInfo.ArgumentList.Add("-vf");
+            startInfo.ArgumentList.Add(vf);
+
+            if (!isAudio)
+            {
+                foreach (var resArg in GetImageResolutionParameter())
+                {
+                    startInfo.ArgumentList.Add(resArg);
+                }
+            }
+
+            startInfo.ArgumentList.Add(EncodingHelper.GetVideoSyncOption("-1", EncoderVersion));
+
+            startInfo.ArgumentList.Add("-f");
+            startInfo.ArgumentList.Add("image2");
+
+            startInfo.ArgumentList.Add(tempExtractPath);
+
             var process = new Process
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    FileName = _ffmpegPath,
-                    Arguments = args,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    ErrorDialog = false,
-                },
+                StartInfo = startInfo,
                 EnableRaisingEvents = true
             };
 
-            _logger.LogDebug("{ProcessFileName} {ProcessArguments}", process.StartInfo.FileName, process.StartInfo.Arguments);
+            _logger.LogDebug("{ProcessFileName} {ProcessArguments}", process.StartInfo.FileName, string.Join(' ', process.StartInfo.ArgumentList));
 
             using (var processWrapper = new ProcessWrapper(process, this))
             {

@@ -26,7 +26,7 @@ namespace MediaBrowser.Providers.Plugins.AudioDb
 {
     public class AudioDbArtistProvider : IRemoteMetadataProvider<MusicArtist, ArtistInfo>, IHasOrder
     {
-        private static string ApiKey => "REPLACEME_IN_CONFIG";
+        public static string ApiKey { get; set; } = "REPLACEME_IN_CONFIG";
         public static string BaseUrl => "https://www.theaudiodb.com/api/v1/json/" + ApiKey;
 
         private readonly IServerConfigurationManager _config;

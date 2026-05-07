@@ -19,23 +19,37 @@ public static class FfProbeKeyframeExtractor
     /// <returns>An instance of <see cref="KeyframeData"/>.</returns>
     public static KeyframeData GetKeyframeData(string ffProbePath, string filePath)
     {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = ffProbePath,
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
+            ErrorDialog = false,
+        };
+
+        startInfo.ArgumentList.Add("-fflags");
+        startInfo.ArgumentList.Add("+genpts");
+        startInfo.ArgumentList.Add("-v");
+        startInfo.ArgumentList.Add("error");
+        startInfo.ArgumentList.Add("-skip_frame");
+        startInfo.ArgumentList.Add("nokey");
+        startInfo.ArgumentList.Add("-show_entries");
+        startInfo.ArgumentList.Add("format=duration");
+        startInfo.ArgumentList.Add("-show_entries");
+        startInfo.ArgumentList.Add("stream=duration");
+        startInfo.ArgumentList.Add("-show_entries");
+        startInfo.ArgumentList.Add("packet=pts_time,flags");
+        startInfo.ArgumentList.Add("-select_streams");
+        startInfo.ArgumentList.Add("v");
+        startInfo.ArgumentList.Add("-of");
+        startInfo.ArgumentList.Add("csv");
+        startInfo.ArgumentList.Add(filePath);
+
         using var process = new Process
         {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = ffProbePath,
-                Arguments = string.Format(
-                    CultureInfo.InvariantCulture,
-                    "-fflags +genpts -v error -skip_frame nokey -show_entries format=duration -show_entries stream=duration -show_entries packet=pts_time,flags -select_streams v -of csv \"{0}\"",
-                    filePath),
-
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-
-                WindowStyle = ProcessWindowStyle.Hidden,
-                ErrorDialog = false,
-            },
+            StartInfo = startInfo,
             EnableRaisingEvents = true
         };
 
