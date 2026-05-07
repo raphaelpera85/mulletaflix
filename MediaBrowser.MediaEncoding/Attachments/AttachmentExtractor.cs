@@ -181,6 +181,7 @@ namespace MediaBrowser.MediaEncoding.Attachments
                     startInfo.ArgumentList.Add("null");
                 }
 
+                int exitCode;
                 using (var process = new Process
                 {
                     StartInfo = startInfo,
@@ -312,6 +313,7 @@ namespace MediaBrowser.MediaEncoding.Attachments
                 startInfo.ArgumentList.Add("null");
             }
 
+            int exitCode;
             using (var process = new Process
             {
                 StartInfo = startInfo,

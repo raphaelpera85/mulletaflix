@@ -822,13 +822,13 @@ public sealed class RecordingsManager : IRecordingsManager, IDisposable
 
             if (!string.IsNullOrWhiteSpace(options.RecordingPostProcessorArguments))
             {
-                // Simple split by space. While not exhaustive for all shell quoting rules, 
+                // Simple split by space. While not exhaustive for all shell quoting rules,
                 // it allows us to use ArgumentList which is fundamentally safer for the {path} injection.
                 var argParts = options.RecordingPostProcessorArguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 foreach (var part in argParts)
                 {
                     var resolved = part.Replace("{path}", path, StringComparison.OrdinalIgnoreCase);
-                    // Remove quotes if the user put them in the template (e.g. "{path}") 
+                    // Remove quotes if the user put them in the template (e.g. "{path}")
                     // because ArgumentList will add them back if needed and we don't want double-quoting.
                     if (resolved.Length >= 2 && resolved.StartsWith('\"') && resolved.EndsWith('\"'))
                     {

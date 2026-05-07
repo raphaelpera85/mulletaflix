@@ -19,6 +19,7 @@ using Jellyfin.Server.Implementations.Extensions;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Extensions;
+using MediaBrowser.Model.Configuration;
 using MediaBrowser.Providers.Plugins.AudioDb;
 using MediaBrowser.Providers.Plugins.Tmdb;
 using MediaBrowser.XbmcMetadata;
@@ -55,8 +56,18 @@ namespace Jellyfin.Server
             _serverConfigurationManager = appHost.ConfigurationManager;
 
             // Initialize API keys from configuration
-            TmdbUtils.ApiKey = _configuration["TMDB_API_KEY"] ?? TmdbUtils.ApiKey;
-            AudioDbArtistProvider.ApiKey = _configuration["AUDIODB_API_KEY"] ?? AudioDbArtistProvider.ApiKey;
+            var providerOptions = _configuration.GetSection("ExternalProviders").Get<ExternalProviderOptions>();
+            if (providerOptions != null)
+            {
+                TmdbUtils.ApiKey = providerOptions.TmdbApiKey ?? TmdbUtils.ApiKey;
+                AudioDbArtistProvider.ApiKey = providerOptions.AudioDbApiKey ?? AudioDbArtistProvider.ApiKey;
+            }
+            else
+            {
+                // Fallback for flat structure or environment variables
+                TmdbUtils.ApiKey = _configuration["TMDB_API_KEY"] ?? TmdbUtils.ApiKey;
+                AudioDbArtistProvider.ApiKey = _configuration["AUDIODB_API_KEY"] ?? AudioDbArtistProvider.ApiKey;
+            }
         }
 
         /// <summary>
@@ -71,6 +82,8 @@ namespace Jellyfin.Server
             {
                 options.HttpsPort = _serverApplicationHost.HttpsPort;
             });
+
+            services.Configure<ExternalProviderOptions>(_configuration.GetSection("ExternalProviders"));
 
             services.AddJellyfinApi(_serverApplicationHost.GetApiPluginAssemblies(), _serverConfigurationManager.GetNetworkConfiguration());
             services.AddJellyfinDbContext(_serverApplicationHost.ConfigurationManager, _configuration);

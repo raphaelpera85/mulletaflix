@@ -522,6 +522,7 @@ namespace Emby.Server.Implementations
             serviceCollection.AddSingleton<IItemTypeLookup, ItemTypeLookup>();
 
             serviceCollection.AddSingleton<IMediaEncoder, MediaBrowser.MediaEncoding.Encoder.MediaEncoder>();
+            serviceCollection.AddSingleton<IFFmpegCapabilityManager, MediaBrowser.MediaEncoding.Encoder.FFmpegCapabilityManager>();
             serviceCollection.AddSingleton<EncodingHelper>();
             serviceCollection.AddSingleton<IPathManager, PathManager>();
             serviceCollection.AddSingleton<IExternalDataManager, ExternalDataManager>();

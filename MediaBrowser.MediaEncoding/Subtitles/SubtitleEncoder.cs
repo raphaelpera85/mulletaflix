@@ -368,6 +368,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             {
                 encodingParam = string.Empty;
             }
+
             int exitCode;
 
             var startInfo = new ProcessStartInfo

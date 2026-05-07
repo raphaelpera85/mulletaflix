@@ -24,11 +24,6 @@ namespace MediaBrowser.Providers.Plugins.Tmdb
         public const string ProviderName = "TheMovieDb";
 
         /// <summary>
-        /// API key to use when performing an API call.
-        /// </summary>
-        public static string ApiKey { get; set; } = "REPLACEME_IN_CONFIG";
-
-        /// <summary>
         /// The crew types to keep.
         /// </summary>
         public static readonly string[] WantedCrewTypes =
@@ -47,6 +42,11 @@ namespace MediaBrowser.Providers.Plugins.Tmdb
             PersonKind.Writer,
             PersonKind.Producer
         };
+
+        /// <summary>
+        /// Gets or sets the API key to use when performing an API call.
+        /// </summary>
+        public static string ApiKey { get; set; } = "REPLACEME_IN_CONFIG";
 
         [GeneratedRegex(@"[\W_-[·]]+")]
         private static partial Regex NonWordRegex();

@@ -58,6 +58,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
         private readonly IBlurayExaminer _blurayExaminer;
         private readonly IConfiguration _config;
         private readonly IServerConfigurationManager _serverConfig;
+        private readonly IFFmpegCapabilityManager _capabilityManager;
         private readonly string _startupOptionFFmpegPath;
 
         private readonly AsyncNonKeyedLocker _thumbnailResourcePool;
@@ -68,39 +69,6 @@ namespace MediaBrowser.MediaEncoding.Encoder
         // MediaEncoder is registered as a Singleton
         private readonly JsonSerializerOptions _jsonSerializerOptions;
 
-        private List<string> _encoders = new List<string>();
-        private List<string> _decoders = new List<string>();
-        private List<string> _hwaccels = new List<string>();
-        private List<string> _filters = new List<string>();
-        private IDictionary<FilterOptionType, bool> _filtersWithOption = new Dictionary<FilterOptionType, bool>();
-        private IDictionary<BitStreamFilterOptionType, bool> _bitStreamFiltersWithOption = new Dictionary<BitStreamFilterOptionType, bool>();
-
-        private bool _isPkeyPauseSupported = false;
-        private bool _isLowPriorityHwDecodeSupported = false;
-        private bool _proberSupportsFirstVideoFrame = false;
-
-        private bool _isVaapiDeviceAmd = false;
-        private bool _isVaapiDeviceInteliHD = false;
-        private bool _isVaapiDeviceInteli965 = false;
-        private bool _isVaapiDeviceSupportVulkanDrmModifier = false;
-        private bool _isVaapiDeviceSupportVulkanDrmInterop = false;
-
-        private bool _isVideoToolboxAv1DecodeAvailable = false;
-
-        private static string[] _vulkanImageDrmFmtModifierExts =
-        {
-            "VK_EXT_image_drm_format_modifier",
-        };
-
-        private static string[] _vulkanExternalMemoryDmaBufExts =
-        {
-            "VK_KHR_external_memory_fd",
-            "VK_EXT_external_memory_dma_buf",
-            "VK_KHR_external_semaphore_fd",
-            "VK_EXT_external_memory_host"
-        };
-
-        private Version _ffmpegVersion = null;
         private string _ffmpegPath = string.Empty;
         private string _ffprobePath;
         private int _threads;
@@ -112,7 +80,8 @@ namespace MediaBrowser.MediaEncoding.Encoder
             IBlurayExaminer blurayExaminer,
             ILocalizationManager localization,
             IConfiguration config,
-            IServerConfigurationManager serverConfig)
+            IServerConfigurationManager serverConfig,
+            IFFmpegCapabilityManager capabilityManager)
         {
             _logger = logger;
             _configurationManager = configurationManager;
@@ -121,6 +90,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
             _localization = localization;
             _config = config;
             _serverConfig = serverConfig;
+            _capabilityManager = capabilityManager;
             _startupOptionFFmpegPath = config.GetValue<string>(Controller.Extensions.ConfigurationExtensions.FfmpegPathKey) ?? string.Empty;
 
             _jsonSerializerOptions = new JsonSerializerOptions(JsonDefaults.Options);
@@ -143,27 +113,27 @@ namespace MediaBrowser.MediaEncoding.Encoder
         public string ProbePath => _ffprobePath;
 
         /// <inheritdoc />
-        public Version EncoderVersion => _ffmpegVersion;
+        public Version EncoderVersion => _capabilityManager.FFmpegVersion;
 
         /// <inheritdoc />
-        public bool IsPkeyPauseSupported => _isPkeyPauseSupported;
+        public bool IsPkeyPauseSupported => _capabilityManager.IsPkeyPauseSupported;
 
         /// <inheritdoc />
-        public bool IsVaapiDeviceAmd => _isVaapiDeviceAmd;
+        public bool IsVaapiDeviceAmd => _capabilityManager.IsVaapiDeviceAmd;
 
         /// <inheritdoc />
-        public bool IsVaapiDeviceInteliHD => _isVaapiDeviceInteliHD;
+        public bool IsVaapiDeviceInteliHD => _capabilityManager.IsVaapiDeviceInteliHD;
 
         /// <inheritdoc />
-        public bool IsVaapiDeviceInteli965 => _isVaapiDeviceInteli965;
+        public bool IsVaapiDeviceInteli965 => _capabilityManager.IsVaapiDeviceInteli965;
 
         /// <inheritdoc />
-        public bool IsVaapiDeviceSupportVulkanDrmModifier => _isVaapiDeviceSupportVulkanDrmModifier;
+        public bool IsVaapiDeviceSupportVulkanDrmModifier => _capabilityManager.IsVaapiDeviceSupportVulkanDrmModifier;
 
         /// <inheritdoc />
-        public bool IsVaapiDeviceSupportVulkanDrmInterop => _isVaapiDeviceSupportVulkanDrmInterop;
+        public bool IsVaapiDeviceSupportVulkanDrmInterop => _capabilityManager.IsVaapiDeviceSupportVulkanDrmInterop;
 
-        public bool IsVideoToolboxAv1DecodeAvailable => _isVideoToolboxAv1DecodeAvailable;
+        public bool IsVideoToolboxAv1DecodeAvailable => _capabilityManager.IsVideoToolboxAv1DecodeAvailable;
 
         [GeneratedRegex(@"[^\/\\]+?(\.[^\/\\\n.]+)?$")]
         private static partial Regex FfprobePathRegex();
@@ -217,64 +187,9 @@ namespace MediaBrowser.MediaEncoding.Encoder
                 // Determine a probe path from the mpeg path
                 _ffprobePath = FfprobePathRegex().Replace(_ffmpegPath, "ffprobe$1");
 
-                // Interrogate to understand what coders are supported
-                var validator = new EncoderValidator(_logger, _ffmpegPath);
-
-                SetAvailableDecoders(validator.GetDecoders());
-                SetAvailableEncoders(validator.GetEncoders());
-                SetAvailableFilters(validator.GetFilters());
-                SetAvailableFiltersWithOption(validator.GetFiltersWithOption());
-                SetAvailableBitStreamFiltersWithOption(validator.GetBitStreamFiltersWithOption());
-                SetAvailableHwaccels(validator.GetHwaccels());
-                SetMediaEncoderVersion(validator);
+                _capabilityManager.Initialize(_ffmpegPath, _ffprobePath, options);
 
                 _threads = EncodingHelper.GetNumberOfThreads(null, options, null);
-
-                _isPkeyPauseSupported = validator.CheckSupportedRuntimeKey("p      pause transcoding", _ffmpegVersion);
-                _isLowPriorityHwDecodeSupported = validator.CheckSupportedHwaccelFlag("low_priority");
-                _proberSupportsFirstVideoFrame = validator.CheckSupportedProberOption("only_first_vframe", _ffprobePath);
-
-                // Check the Vaapi device vendor
-                if (OperatingSystem.IsLinux()
-                    && SupportsHwaccel("vaapi")
-                    && !string.IsNullOrEmpty(options.VaapiDevice)
-                    && options.HardwareAccelerationType == HardwareAccelerationType.vaapi)
-                {
-                    _isVaapiDeviceAmd = validator.CheckVaapiDeviceByDriverName("Mesa Gallium driver", options.VaapiDevice);
-                    _isVaapiDeviceInteliHD = validator.CheckVaapiDeviceByDriverName("Intel iHD driver", options.VaapiDevice);
-                    _isVaapiDeviceInteli965 = validator.CheckVaapiDeviceByDriverName("Intel i965 driver", options.VaapiDevice);
-                    _isVaapiDeviceSupportVulkanDrmModifier = validator.CheckVulkanDrmDeviceByExtensionName(options.VaapiDevice, _vulkanImageDrmFmtModifierExts);
-                    _isVaapiDeviceSupportVulkanDrmInterop = validator.CheckVulkanDrmDeviceByExtensionName(options.VaapiDevice, _vulkanExternalMemoryDmaBufExts);
-
-                    if (_isVaapiDeviceAmd)
-                    {
-                        _logger.LogInformation("VAAPI device {RenderNodePath} is AMD GPU", options.VaapiDevice);
-                    }
-                    else if (_isVaapiDeviceInteliHD)
-                    {
-                        _logger.LogInformation("VAAPI device {RenderNodePath} is Intel GPU (iHD)", options.VaapiDevice);
-                    }
-                    else if (_isVaapiDeviceInteli965)
-                    {
-                        _logger.LogInformation("VAAPI device {RenderNodePath} is Intel GPU (i965)", options.VaapiDevice);
-                    }
-
-                    if (_isVaapiDeviceSupportVulkanDrmModifier)
-                    {
-                        _logger.LogInformation("VAAPI device {RenderNodePath} supports Vulkan DRM modifier", options.VaapiDevice);
-                    }
-
-                    if (_isVaapiDeviceSupportVulkanDrmInterop)
-                    {
-                        _logger.LogInformation("VAAPI device {RenderNodePath} supports Vulkan DRM interop", options.VaapiDevice);
-                    }
-                }
-
-                // Check if VideoToolbox supports AV1 decode
-                if (OperatingSystem.IsMacOS() && SupportsHwaccel("videotoolbox"))
-                {
-                    _isVideoToolboxAv1DecodeAvailable = validator.CheckIsVideoToolboxAv1DecodeAvailable();
-                }
             }
 
             _logger.LogInformation("FFmpeg: {FfmpegPath}", _ffmpegPath ?? string.Empty);
@@ -321,74 +236,39 @@ namespace MediaBrowser.MediaEncoding.Encoder
             }
         }
 
-        public void SetAvailableEncoders(IEnumerable<string> list)
-        {
-            _encoders = list.ToList();
-        }
-
-        public void SetAvailableDecoders(IEnumerable<string> list)
-        {
-            _decoders = list.ToList();
-        }
-
-        public void SetAvailableHwaccels(IEnumerable<string> list)
-        {
-            _hwaccels = list.ToList();
-        }
-
-        public void SetAvailableFilters(IEnumerable<string> list)
-        {
-            _filters = list.ToList();
-        }
-
-        public void SetAvailableFiltersWithOption(IDictionary<FilterOptionType, bool> dict)
-        {
-            _filtersWithOption = dict;
-        }
-
-        public void SetAvailableBitStreamFiltersWithOption(IDictionary<BitStreamFilterOptionType, bool> dict)
-        {
-            _bitStreamFiltersWithOption = dict;
-        }
-
-        public void SetMediaEncoderVersion(EncoderValidator validator)
-        {
-            _ffmpegVersion = validator.GetFFmpegVersion();
-        }
-
         /// <inheritdoc />
         public bool SupportsEncoder(string encoder)
         {
-            return _encoders.Contains(encoder, StringComparer.OrdinalIgnoreCase);
+            return _capabilityManager.SupportsEncoder(encoder);
         }
 
         /// <inheritdoc />
         public bool SupportsDecoder(string decoder)
         {
-            return _decoders.Contains(decoder, StringComparer.OrdinalIgnoreCase);
+            return _capabilityManager.SupportsDecoder(decoder);
         }
 
         /// <inheritdoc />
         public bool SupportsHwaccel(string hwaccel)
         {
-            return _hwaccels.Contains(hwaccel, StringComparer.OrdinalIgnoreCase);
+            return _capabilityManager.SupportsHwaccel(hwaccel);
         }
 
         /// <inheritdoc />
         public bool SupportsFilter(string filter)
         {
-            return _filters.Contains(filter, StringComparer.OrdinalIgnoreCase);
+            return _capabilityManager.SupportsFilter(filter);
         }
 
         /// <inheritdoc />
         public bool SupportsFilterWithOption(FilterOptionType option)
         {
-            return _filtersWithOption.TryGetValue(option, out var val) && val;
+            return _capabilityManager.SupportsFilterWithOption(option);
         }
 
         public bool SupportsBitStreamFilterWithOption(BitStreamFilterOptionType option)
         {
-            return _bitStreamFiltersWithOption.TryGetValue(option, out var val) && val;
+            return _capabilityManager.SupportsBitStreamFilterWithOption(option);
         }
 
         public bool CanEncodeToAudioCodec(string codec)
@@ -437,7 +317,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
             if (request.MediaSource.AnalyzeDurationMs > 0)
             {
                 args.Add("-analyzeduration");
-                args.Add((request.MediaSource.AnalyzeDurationMs * 1000).ToString(CultureInfo.InvariantCulture));
+                args.Add((request.MediaSource.AnalyzeDurationMs.Value * 1000).ToString(CultureInfo.InvariantCulture));
             }
             else if (!string.IsNullOrEmpty(ffmpegAnalyzeDuration))
             {
@@ -540,7 +420,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
             startInfo.ArgumentList.Add("-show_format");
 
-            if (protocol == MediaProtocol.File && !isAudio && _proberSupportsFirstVideoFrame)
+            if (protocol == MediaProtocol.File && !isAudio && _capabilityManager.ProberSupportsFirstVideoFrame)
             {
                 startInfo.ArgumentList.Add("-show_frames");
                 startInfo.ArgumentList.Add("-only_first_vframe");
@@ -794,7 +674,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
             startInfo.ArgumentList.Add("-i");
             // inputPath is already prefixed and quoted by EncodingUtils (e.g. file:"path")
-            // When using ArgumentList, we should ideally not have the quotes. 
+            // When using ArgumentList, we should ideally not have the quotes.
             // However, to avoid breaking legacy EncodingUtils logic, we'll strip the quotes if they exist
             // since ArgumentList will handle escaping correctly.
             startInfo.ArgumentList.Add(inputPath.Replace("\"", string.Empty, StringComparison.Ordinal));
@@ -960,7 +840,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
                 inputArg = "-threads " + threads + " " + inputArg; // HW accel args set a different input thread count, only set if disabled
             }
 
-            if (options.HardwareAccelerationType == HardwareAccelerationType.videotoolbox && _isLowPriorityHwDecodeSupported)
+            if (options.HardwareAccelerationType == HardwareAccelerationType.videotoolbox && _capabilityManager.IsLowPriorityHwDecodeSupported)
             {
                 // VideoToolbox supports low priority decoding, which is useful for trickplay
                 inputArg = "-hwaccel_flags +low_priority " + inputArg;
