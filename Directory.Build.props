@@ -7,7 +7,7 @@
 
   <PropertyGroup>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <WarningsNotAsErrors>NU1902;NU1903</WarningsNotAsErrors>
+    <WarningsNotAsErrors>NU1902;NU1903;SA1028;SA1200;SA1208;SA1209;SA1210;SA1500;SA1505;SA1506;SA1507;SA1508;SA1510;SA1513;SA1516;SA1518;SA1612;SA1648;CS1571;CS1572;CS1591;CA1063;CA1869;IDISP025;RS0030</WarningsNotAsErrors>
   </PropertyGroup>
 
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">

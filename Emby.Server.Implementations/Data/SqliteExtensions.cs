@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Globalization;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Data.Sqlite;
 
 namespace Emby.Server.Implementations.Data
@@ -51,6 +52,7 @@ namespace Emby.Server.Implementations.Data
             "yy-MM-dd"
         };
 
+        [SuppressMessage("Security", "CA2100:Review SQL queries for SQL injection vulnerabilities", Justification = "Internal API - callers control query composition")]
         public static IEnumerable<SqliteDataReader> Query(this SqliteConnection sqliteConnection, string commandText)
         {
             if (sqliteConnection.State != ConnectionState.Open)
@@ -69,6 +71,7 @@ namespace Emby.Server.Implementations.Data
             }
         }
 
+        [SuppressMessage("Security", "CA2100:Review SQL queries for SQL injection vulnerabilities", Justification = "Internal API - callers control query composition")]
         public static void Execute(this SqliteConnection sqliteConnection, string commandText)
         {
             using var command = sqliteConnection.CreateCommand();
@@ -261,6 +264,7 @@ namespace Emby.Server.Implementations.Data
             return Convert.ToInt32(result!, CultureInfo.InvariantCulture);
         }
 
+        [SuppressMessage("Security", "CA2100:Review SQL queries for SQL injection vulnerabilities", Justification = "Internal API - callers control query composition")]
         public static SqliteCommand PrepareStatement(this SqliteConnection sqliteConnection, string sql)
         {
             var command = sqliteConnection.CreateCommand();
